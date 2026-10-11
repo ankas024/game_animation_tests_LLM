@@ -38,7 +38,9 @@ def _obj(name, data, col):
 
 def aim(obj, target):
     d = Vector(target) - obj.location
-    obj.rotation_euler = d.to_track_quat("-Z", "Y").to_euler()
+    # stay continuous with the previous key: a +-180 deg yaw wrap would make motion blur
+    # interpolate through a full spin between frames
+    obj.rotation_euler = d.to_track_quat("-Z", "Y").to_euler("XYZ", obj.rotation_euler)
 
 
 def key_energy(light, curve, f0, f1, step=1):
