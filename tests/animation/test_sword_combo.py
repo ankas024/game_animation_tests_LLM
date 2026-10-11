@@ -93,7 +93,7 @@ def test_sword_appears_and_vanishes():
     assert sword_scale(b) < 0.01, "sword still visible at the end"
 
 
-def test_feet_stay_above_floor_and_loop_closes():
+def test_feet_stay_above_floor_and_ends_in_idle():
     arm = _load(COMBO)
     a, b = _action_range(arm)
     sc = bpy.context.scene
@@ -104,12 +104,24 @@ def test_feet_stay_above_floor_and_loop_closes():
             for bn in ("Foot", "ToeBase", "Toe_End", "Leg"):
                 lowest = min(lowest, _world(arm, P + s + bn).z)
     assert lowest > -0.015, f"bone below the floor ({lowest:.3f} m)"
-    # last frame returns to the first frame's pose (blends straight into idle)
+    # the combo travels; it ends in the idle pose (same facing) on the new spot
+    data = json.load(open(EVENTS))
+    net = data["root_motion"]["net_displacement_m"]
     sc.frame_set(a)
     first = {n: _world(arm, n) for n in _body_bones(arm)}
     sc.frame_set(b)
-    worst = max((_world(arm, n) - p).length for n, p in first.items() if n != "weapon_r")
-    assert worst < 0.01, f"end pose differs from start pose by {worst:.3f} m"
+    shift = _world(arm, P + "Hips") - first[P + "Hips"]
+    shift.z = 0.0
+    assert shift.length > 1.0, f"combo should travel, moved {shift.length:.2f} m"
+    # FBX is -Z forward / Y up; Blender re-imports it facing -Y, so forward = -Y
+    assert abs(shift.x - (-net["x"])) < 0.01 and abs(shift.y - (-net["y"])) < 0.01, \
+        f"events.json root motion {net} doesn't match the baked hips {tuple(shift)}"
+    worst = max((_world(arm, n) - shift - p).length for n, p in first.items() if n != "weapon_r")
+    assert worst < 0.01, f"end pose differs from the idle start pose by {worst:.3f} m"
+    rx, ry = data["curves"]["RootMotionX"], data["curves"]["RootMotionY"]
+    assert len(rx) == len(ry) == b - a + 1
+    assert abs(rx[0]) < 1e-6 and abs(ry[0]) < 1e-6
+    assert abs(rx[-1] - net["x"]) < 1e-3 and abs(ry[-1] - net["y"]) < 1e-3
 
 
 def test_idle_loop_is_seamless_and_matches_combo():

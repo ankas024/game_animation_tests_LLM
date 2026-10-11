@@ -442,7 +442,7 @@ def main():
     rig = rigkit.Rig(arm)
     rig.ensure_weapon_bone()
     sw_obj = sword.build_skinned(arm, rig)
-    T = combo.build()
+    T = combo.build(rig)
     bake.bake(arm, rig, T)
 
     sc = bpy.context.scene

@@ -22,7 +22,7 @@ def main():
     arm, meshes = su.load_character()
     rig = rigkit.Rig(arm)
     rig.ensure_weapon_bone()
-    T = combo.build()
+    T = combo.build(rig)
     a, b = (int(sys.argv[-2]), int(sys.argv[-1])) if len(sys.argv) > 2 else (0, T.end)
     prev = None
     issues = []

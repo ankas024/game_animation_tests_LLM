@@ -24,7 +24,7 @@ tools/
 
 | Asset | Character | Notes |
 |---|---|---|
-| [`combat/A_ch02_SwordCombo`](docs/sword_combo.md) | `ch_02` | NieR-style sword combo, 60 fps, 6.3 s. The sword materialises at the start and dissolves at the end. Adds a `weapon_r` bone. |
+| [`combat/A_ch02_SwordCombo`](docs/sword_combo.md) | `ch_02` | NieR-style sword combo, 60 fps, 5.7 s, travels 2.2 m forward. The sword materialises at the start and dissolves at the end. Adds a `weapon_r` bone. |
 | `idle/A_ch02_Idle_Loop` | `ch_02` | 4 s seamless idle; matches the combo's first/last pose. |
 
 ![sword combo](docs/media/sword_combo_preview.gif)

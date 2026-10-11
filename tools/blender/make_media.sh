@@ -17,7 +17,7 @@ ffmpeg -y -loglevel error -i "$OUT/sword_combo_preview.mp4" \
   "$OUT/sword_combo_preview.gif"
 
 # key-pose sheet
-KEYS="44 52 60 96 116 140 179 192 205 246 258 312"
+KEYS="27 38 52 61 78 86 106 138 170 194 236 288"
 TMP=$(mktemp -d)
 for f in $KEYS; do
   p=$(printf "%s/f_%04d.png" "$FR" "$f")

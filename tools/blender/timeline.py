@@ -11,6 +11,9 @@ Keyframe timeline for rigkit channels.
 * sword / left-hand frames and hand directions are authored as vectors
   and converted to Euler channels with branch selection for continuity
 * per-group time offsets give overlapping action (hips lead, arm/head drag)
+* optional post-process (`bake_cache`): the sampled channels run through
+  damped springs (follow-through / settle on secondary channels) and a
+  Gaussian low-pass, so the final curves are smooth to the second derivative
 """
 import math
 from collections import defaultdict
@@ -80,12 +83,25 @@ class Timeline:
         self.frames = []                    # (f, kind, data, ease)
         self.offsets = {}                   # ch prefix -> frame offset
         self.layers = []                    # procedural additive fns(f, pose)
+        self.tans = defaultdict(dict)       # ch -> {frame: explicit slope (units/frame)}
+        # post-process (used once bake_cache() has run)
+        self.springs = {}                   # ch prefix -> (omega rad/frame, zeta)
+        self.sigma = {}                     # ch prefix -> Gaussian sigma (frames)
+        self.default_sigma = 0.0
+        self._cache = None
         self._final = None
 
     # ------------------------------------------------------------------
     def key(self, f, ease=None, **ch):
         for k, v in ch.items():
             self.keys[k].append((float(f), float(v), ease))
+        self._final = None
+
+    def tan(self, f, **ch):
+        """Explicit tangent (units per frame) for keys at frame f; the
+        segments either side must use the default (Hermite) interpolation."""
+        for k, v in ch.items():
+            self.tans[k][float(f)] = float(v)
         self._final = None
 
     def sword(self, f, blade, edge, ease=None):
@@ -180,13 +196,13 @@ class Timeline:
                         v = _unwrap(v, out[-1][1])
                     out.append((f, v, e))
                 ks = out
-            final[ch] = self._prep(ks)
+            final[ch] = self._prep(ks, self.tans.get(ch))
         self.keys = defaultdict(list, saved)
         self._final = final
         return final
 
     @staticmethod
-    def _prep(ks):
+    def _prep(ks, tans=None):
         n = len(ks)
         t = [k[0] for k in ks]
         y = [k[1] for k in ks]
@@ -209,6 +225,11 @@ class Timeline:
                 if 0 < i < n - 1:
                     d[i] = (y[i + 1] - y[i - 1]) / (t[i + 1] - t[i - 1])
                 eases[i] = None
+        if tans:
+            for i in range(n):
+                for tf, sl in tans.items():
+                    if abs(tf - t[i]) < 1e-6:
+                        d[i] = sl
         return (t, y, d, eases)
 
     @staticmethod
@@ -246,7 +267,7 @@ class Timeline:
                 best, blen = off, len(pre)
         return best
 
-    def sample(self, f):
+    def raw(self, f):
         final = self.finalize()
         pose = {}
         for ch, prep in final.items():
@@ -254,6 +275,92 @@ class Timeline:
         for fn in self.layers:
             fn(f, pose)
         return pose
+
+    def sample(self, f):
+        if self._cache is None:
+            return self.raw(f)
+        f0, data = self._cache
+        n = len(next(iter(data.values())))
+        x = min(max(f - f0, 0.0), n - 1.0)
+        i = min(int(math.floor(x)), n - 2)
+        u = x - i
+        ia, ib, ic, idd = max(i - 1, 0), i, i + 1, min(i + 2, n - 1)
+        pose = {}
+        for ch, arr in data.items():
+            p0, p1, p2, p3 = arr[ia], arr[ib], arr[ic], arr[idd]
+            # Catmull-Rom between cached frames (sub-frame samples for fx / motion blur)
+            pose[ch] = 0.5 * ((2 * p1) + (-p0 + p2) * u + (2 * p0 - 5 * p1 + 4 * p2 - p3) * u * u
+                              + (-p0 + 3 * p1 - 3 * p2 + p3) * u * u * u)
+        return pose
+
+    def _param(self, table, ch, default):
+        best, blen = default, -1
+        for pre, val in table.items():
+            if ch.startswith(pre) and len(pre) > blen:
+                best, blen = val, len(pre)
+        return best
+
+    def bake_cache(self, f0=None, f1=None, pad=24):
+        """Sample every frame once, then run springs + low-pass per channel.
+        After this, sample() reads the processed curves."""
+        self._cache = None
+        f0 = 0 if f0 is None else f0
+        f1 = self.end if f1 is None else f1
+        a, b = int(f0) - pad, int(f1) + pad
+        frames = list(range(a, b + 1))
+        raws = [self.raw(f) for f in frames]
+        data = {}
+        for ch in raws[0]:
+            x = [r[ch] for r in raws]
+            sp = self._param(self.springs, ch, None)
+            if sp:
+                x = self._spring(x, *sp)
+            sg = self._param(self.sigma, ch, self.default_sigma)
+            if sg and sg > 0:
+                x = self._gauss(x, sg)
+            data[ch] = x
+        # trim the padding
+        data = {ch: arr[pad:len(arr) - pad] for ch, arr in data.items()}
+        self._cache = (int(f0), data)
+
+    @staticmethod
+    def _spring(x, omega, zeta, sub=8):
+        """Damped spring follower.  The input is read ahead by the spring's
+        ramp lag (2 zeta / omega) so poses still land on time; what remains
+        is the overshoot / settle and the rounding of sharp changes."""
+        lag = 2.0 * zeta / omega
+        n = len(x)
+
+        def xin(t):
+            t = min(max(t, 0.0), n - 1.0)
+            i = min(int(t), n - 2)
+            u = t - i
+            return x[i] * (1 - u) + x[i + 1] * u
+        y, v = xin(lag), 0.0
+        out = []
+        dt = 1.0 / sub
+        for f in range(n):
+            out.append(y)
+            for s in range(sub):
+                tgt = xin(f + lag + s * dt)
+                acc = omega * omega * (tgt - y) - 2.0 * zeta * omega * v
+                v += acc * dt
+                y += v * dt
+        return out
+
+    @staticmethod
+    def _gauss(x, sigma):
+        r = int(math.ceil(sigma * 3))
+        w = [math.exp(-0.5 * (k / sigma) ** 2) for k in range(-r, r + 1)]
+        ws = sum(w)
+        n = len(x)
+        out = []
+        for i in range(n):
+            acc = 0.0
+            for k in range(-r, r + 1):
+                acc += w[k + r] * x[min(max(i + k, 0), n - 1)]
+            out.append(acc / ws)
+        return out
 
     def last_frame(self):
         final = self.finalize()

@@ -40,6 +40,15 @@ FBX_ARGS = dict(
 )
 
 
+def _lowpass(x, sigma):
+    import math
+    r = int(sigma * 3)
+    w = [math.exp(-0.5 * (k / sigma) ** 2) for k in range(-r, r + 1)]
+    n = len(x)
+    return [sum(w[k + r] * x[min(max(i + k, 0), n - 1)] for k in range(-r, r + 1)) / sum(w)
+            for i in range(n)]
+
+
 def strip_missing_textures():
     """The source FBX references a texture that isn't in the repo; drop the
     dangling image nodes so exported files don't carry a broken path."""
@@ -67,7 +76,7 @@ def export_combo():
     rig = rigkit.Rig(arm)
     rig.ensure_weapon_bone()
     sw = sword.build_skinned(arm, rig)
-    T = combo.build()
+    T = combo.build(rig)
     act, per_frame = bake.bake(arm, rig, T, name="A_ch02_SwordCombo")
     sc = bpy.context.scene
     sc.frame_set(0)
@@ -79,17 +88,33 @@ def export_combo():
     fps = combo.FPS
     ev = dict(T.events)
     ev["summon_end"] = ev["summon_flash"] + 3
-    ev["dismiss_end"] = ev["dismiss_start"] + 22
+    ev["dismiss_end"] = ev["dismiss_start"] + 20
     events = [{"name": k, "frame": int(v), "time": round(v / fps, 4)}
               for k, v in sorted(ev.items(), key=lambda kv: kv[1])]
     curve = [round(per_frame[f]["sw_mat"], 4) for f in range(0, T.end + 1)]
+    # root motion: hips projected to the floor, low-passed so the step bob
+    # and weight shifts stay in the animation (character space, metres:
+    # +x right, +y forward; frame 0 = origin)
+    hx = [per_frame[f]["hips_x"] for f in range(0, T.end + 1)]
+    hy = [per_frame[f]["hips_y"] for f in range(0, T.end + 1)]
+    rx, ry = _lowpass(hx, 10.0), _lowpass(hy, 10.0)
+    # pin the ends exactly: start at the origin, end on the idle pose's spot
+    rx = [v - rx[0] + (hx[-1] - hx[0] - (rx[-1] - rx[0])) * i / T.end for i, v in enumerate(rx)]
+    ry = [v - ry[0] + (hy[-1] - hy[0] - (ry[-1] - ry[0])) * i / T.end for i, v in enumerate(ry)]
+    net = (hx[-1] - hx[0], hy[-1] - hy[0])
     data = {
         "animation": "A_ch02_SwordCombo",
         "fps": fps, "frame_start": 0, "frame_end": T.end,
         "duration_s": round(T.end / fps, 4),
         "skeleton": "ch_02 Mixamo rig + weapon_r (child of mixamorig:RightHand)",
-        "root_motion": "Translation lives on mixamorig:Hips. The combo leaves and returns to the "
-                       "same spot/facing (net displacement ~0), so it plays in place.",
+        "root_motion": {
+            "notes": "No root bone: translation lives on mixamorig:Hips. The combo travels forward and "
+                     "ends in the idle pose on a new spot, facing the start direction. Curves "
+                     "RootMotionX/Y are the floor-projected, low-passed hips path in character space "
+                     "(metres, +x right, +y forward, frame 0 = origin) for root-motion extraction.",
+            "net_displacement_m": {"x": round(net[0], 4), "y": round(net[1], 4)},
+            "net_yaw_deg": 0.0,
+        },
         "notes": "weapon_r is scaled to ~0 while the sword does not exist; drive a dissolve "
                  "material with curves.SwordMaterialize (0 = gone, 1 = solid).",
         "events": events,
@@ -98,7 +123,9 @@ def export_combo():
             "dismiss": [ev["dismiss_start"], ev["dismiss_end"]],
             "airborne": [ev["jump_takeoff"], ev["hit_5_impact"]],
         },
-        "curves": {"SwordMaterialize": curve},
+        "curves": {"SwordMaterialize": curve,
+                   "RootMotionX": [round(v, 4) for v in rx],
+                   "RootMotionY": [round(v, 4) for v in ry]},
     }
     with open(os.path.join(OUT_COMBAT, "A_ch02_SwordCombo.events.json"), "w") as fh:
         json.dump(data, fh, indent=1)

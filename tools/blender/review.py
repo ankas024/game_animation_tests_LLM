@@ -49,7 +49,7 @@ def main():
     su.ground_grid()
     for m in meshes:
         m.color = (0.80, 0.64, 0.56, 1)
-    T = combo.build()
+    T = combo.build(rig)
     cam_objs = {n: su.add_camera(n, *CAMS[n]) for n in cams.split(",")}
     paths = []
     for f in parse_frames(frames):
@@ -58,7 +58,7 @@ def main():
         hp = Wp[rigkit.P + "Hips"]
         for n, cam in cam_objs.items():
             loc, tgt, lens = CAMS[n]
-            off = Vector((hp.x, hp.y, 0.0))
+            off = Vector((hp.x, hp.y, max(0.0, hp.z - 0.8)))   # follow jumps
             cam.location = Vector(loc) + off
             d = Vector(tgt) + off - cam.location
             cam.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler()

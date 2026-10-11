@@ -64,6 +64,7 @@ def basis(x, y):
 
 
 def slerp_m(a, b, t):
+    t = max(0.0, min(1.0, t))
     return a.to_quaternion().slerp(b.to_quaternion(), t).to_matrix()
 
 
@@ -96,7 +97,7 @@ DEFAULTS = dict(
     # right hand: grip point on a sphere around the posed right shoulder
     rh_r=0.24, rh_az=90.0, rh_el=-75.0,
     sw_az=0.0, sw_el=-60.0, sw_roll=0.0,
-    rh_space=0.0,
+    rh_space=0.0, rh_fit=1.0,
     r_pole_x=0.4, r_pole_y=-0.6, r_pole_z=-1.0,
     # left hand
     lh_r=0.24, lh_az=-90.0, lh_el=-75.0,
@@ -279,6 +280,7 @@ class Rig:
             place(P + nm, G[self.parent[P + nm]])
 
         # ---- right arm (sword) -----------------------------------------
+        self._last_gc = Gc
         sw_root = frame_from_euler(c["sw_az"], c["sw_el"], c["sw_roll"])
         S_char = slerp_m(sw_root, Gc @ sw_root, c["rh_space"])
         self._arm(c, "Right", Gc, S_char,
@@ -336,8 +338,17 @@ class Rig:
         pole_c = Gc @ pole
         pole = (pole * (1 - sp) + pole_c * sp).normalized()
         l1, l2 = self.len[s + "Arm"], self.len[s + "Fore"]
-        limit = 58.0 if is_sword else 50.0
+        limit = 68.0 if is_sword else 50.0
         auto_w = 0.55
+        if is_sword:
+            self.fit_info = (T, T, Sj)
+        if is_sword and c.get("rh_fit", 1.0) > 0.5:
+            # Keep the blade on its authored path: when the wrist would have
+            # to bend past its range, move the grip towards the spot where the
+            # wrist is straight (sphere of radius l1 around the implied elbow
+            # pivot) instead of rotating the sword.  Blended by how far over
+            # the range the first solve is, so it stays continuous.
+            T = self._fit_grip(T, Sj, R_hand, off, pole, l1, l2, limit, auto_w)
         for _ in range(4):
             wrist = T - R_hand @ off
             f_star = R_hand @ Vector((0, 1, 0))        # forearm dir for a neutral wrist
@@ -378,6 +389,104 @@ class Rig:
             grip_now = H[P + "RightHand"] + R_hand @ (self.grip_pos_local + Vector((0, 0, c["sw_off"])))
             g_w = spin @ Gw
             place(WEAPON, g_w, grip_now + spin @ (Gw @ (self.h[WEAPON] - self.grip_rest)))
+
+    def _wrist_bend(self, T, Sj, R_hand, off, pole, l1, l2, auto_w):
+        wrist = T - R_hand @ off
+        f_star = R_hand @ Vector((0, 1, 0))
+        e_star = (wrist - f_star * l2) - Sj
+        pole_use = pole
+        if e_star.length > 1e-5:
+            pole_use = (pole * (1 - auto_w) + e_star.normalized() * auto_w)
+        E, n, w_eff = self.two_bone(Sj, wrist, pole_use, l1, l2, soft=0.93)
+        fore_dir = (w_eff - E).normalized()
+        return math.degrees(fore_dir.angle(f_star))
+
+    def _fit_grip(self, T, Sj, R_hand, off, pole, l1, l2, limit, auto_w):
+        self.fit_info = (T, T, Sj)
+        bend = self._wrist_bend(T, Sj, R_hand, off, pole, l1, l2, auto_w)
+        x = (bend - (limit - 12.0)) / 20.0
+        w = smooth01(x)
+        if w <= 0.0:
+            return T
+        f_star = R_hand @ Vector((0, 1, 0))
+        C = Sj + f_star * l2 + R_hand @ off
+        d = T - C
+        if d.length < 1e-6:
+            return T
+        T_fit = C + d.normalized() * (l1 * 0.97)
+        shift = (T_fit - T) * w
+        if shift.length > 0.07:                     # never drag the hand far
+            shift = shift * (0.07 / shift.length)
+        T_new = T + shift
+        # keep a sensible reach (don't fold the arm into the shoulder)
+        reach = (T_new - Sj).length
+        r_min = min((T - Sj).length, 0.62 * (l1 + l2 + off.length))
+        if reach < r_min:
+            T_new = Sj + (T_new - Sj) * (r_min / max(reach, 1e-6))
+        self.fit_info = (T, T_new, Sj)
+        return T_new
+
+    def fit_sword_grip(self, T, sigma=1.6, passes=1):
+        for _ in range(passes):
+            self._fit_pass(T, sigma)
+        # the correction is now part of the curves: no per-frame refit
+        f0, data = T._cache
+        data["rh_fit"] = [0.0] * len(data["rh_r"])
+
+    def _fit_pass(self, T, sigma):
+        """Bake the grip fit into the timeline's rh_az / rh_el / rh_r curves,
+        so the hand placement that keeps the blade on its path is smooth in
+        time.  The correction is low-passed as a 3D offset (well defined even
+        with the hand straight overhead) and only frames it touches change.
+        Needs T.bake_cache() to have run."""
+        from timeline import Timeline as _TL
+        f0, data = T._cache
+        n = len(data["rh_r"])
+        orig, delta = [], []
+        for i in range(n):
+            c = dict(DEFAULTS)
+            c.update({ch: arr[i] for ch, arr in data.items()})
+            c["rh_fit"] = 1.0
+            self.solve(c)
+            T0, T1, Sj = self.fit_info
+            sp = clamp(c["rh_space"], 0.0, 1.0)
+            Gc = self._last_gc
+            # keyed-space vector: v such that blend(v) * r = target - shoulder
+            v0 = euler_dir(c["rh_az"], c["rh_el"]) * c["rh_r"]
+            d1 = T1 - Sj
+            r1 = d1.length
+            u = d1 / max(r1, 1e-9)
+            if sp > 1e-4:
+                # invert dir = normalize(v (1 - sp) + Gc v sp)
+                v = u.copy()
+                for _ in range(4):
+                    cur = (v * (1 - sp) + (Gc @ v) * sp).normalized()
+                    v = cur.rotation_difference(u).to_matrix() @ v
+                u = v.normalized()
+            orig.append(v0)
+            delta.append(u * r1 - v0)
+        dx = _TL._gauss([d.x for d in delta], sigma)
+        dy = _TL._gauss([d.y for d in delta], sigma)
+        dz = _TL._gauss([d.z for d in delta], sigma)
+        for i in range(n):
+            dd = Vector((dx[i], dy[i], dz[i]))
+            if dd.length < 1e-5:
+                continue
+            w = orig[i] + dd
+            r = w.length
+            w = w / max(r, 1e-9)
+            el = math.degrees(math.asin(clamp(w.z, -1.0, 1.0)))
+            az = math.degrees(math.atan2(w.x, w.y))
+            # stay on the Euler branch / turn count of the keyed curve
+            oa, oe = data["rh_az"][i], data["rh_el"][i]
+            best = None
+            for ca, ce in ((az, el), (az + 180.0, 180.0 - el), (az + 180.0, -180.0 - el)):
+                ca += 360.0 * round((oa - ca) / 360.0)
+                ce += 360.0 * round((oe - ce) / 360.0)
+                cost = abs(ca - oa) + abs(ce - oe)
+                if best is None or cost < best[0]:
+                    best = (cost, ca, ce)
+            data["rh_az"][i], data["rh_el"][i], data["rh_r"][i] = best[1], best[2], r
 
     # ------------------------------------------------------------------
     def _fingers(self, c, s, H, G, place):
@@ -443,7 +552,7 @@ class Rig:
         place(P + s + "Foot", Rfoot, ankle_real)
         # toes stay flat while the ball is planted
         flat = clamp(1.0 - c[k + "_z"] / 0.05, 0.0, 1.0) * (1 - sp)
-        g_toe = slerp_m(Rfoot, Ry if sp == 0 else Rfoot, flat)
+        g_toe = slerp_m(Rfoot, Ry, flat)
         place(P + s + "ToeBase", g_toe)
 
     # ------------------------------------------------------------------
