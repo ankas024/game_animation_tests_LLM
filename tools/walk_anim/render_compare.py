@@ -2,11 +2,12 @@
 
     python render_compare.py <in_char.fbx> <reference.gif> <out_dir> [--azim DEG] [--frames 0,2,4]
 
-Writes <out_dir>/cmp_XX.png per anim frame plus <out_dir>/compare.gif.
+Writes <out_dir>/cmp_XX.png per anim frame plus <out_dir>/compare.mp4 (needs ffmpeg).
 Reference GIF frame for anim frame t is REF_OFFSET + t/2 (the GIF is ~15 fps).
 """
 import math
 import os
+import subprocess
 import sys
 
 import bpy
@@ -57,7 +58,6 @@ def main():
     sc = bpy.context.scene
     ref = Image.open(gif)
     dist, height, aim = 3.6, 1.15, (0, 0, 0.64)
-    tiles = []
     for t in frames:
         sc.frame_set(t)
         imgs = []
@@ -80,9 +80,11 @@ def main():
         tile.paste(rb, (288 + 640, 0))
         ImageDraw.Draw(tile).text((6, 6), f"anim {t} / ref {g}", fill="black")
         tile.save(os.path.join(out, f"cmp_{t:02d}.png"))
-        tiles.append(tile)
-    tiles[0].save(os.path.join(out, "compare.gif"), save_all=True, append_images=tiles[1:],
-                  duration=66, loop=0)
+    # 15 fps matches the reference GIF; loop the cycle 4 times
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-stream_loop", "3", "-framerate", "15",
+                    "-pattern_type", "glob", "-i", os.path.join(out, "cmp_*.png"),
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "18", "-movflags", "+faststart",
+                    os.path.join(out, "compare.mp4")], check=True)
 
 
 if __name__ == "__main__":

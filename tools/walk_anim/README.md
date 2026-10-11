@@ -33,4 +33,4 @@ python tools/walk_anim/render_compare.py assets/skeletal_meshes/characters/ch_02
 
 Each tile shows reference front | render front | render back | reference back. The cameras are yawed
 by -20° because the subject in the reference is turned slightly relative to its cameras. The result is
-in `docs/ch_02_walk_catwalk_vs_reference.gif`.
+in `docs/ch_02_walk_catwalk_vs_reference.mp4`.
