@@ -1,0 +1,4 @@
+renders/frames/
+renders/*.wav
+__pycache__/
+*.blend1
