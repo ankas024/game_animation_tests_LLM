@@ -1,0 +1,87 @@
+{
+  "name": "A_ch02_SpearAcrobatics",
+  "fps": 30,
+  "frames": 170,
+  "duration_s": 5.667,
+  "reference": {
+    "folder": "references/spear_acrobatics",
+    "views": {
+      "A": {
+        "frames": [
+          0,
+          163
+        ],
+        "anim_frame_of_first": 6
+      },
+      "B": {
+        "frames": [
+          164,
+          333
+        ],
+        "anim_frame_of_first": 0
+      }
+    },
+    "note": "the folder shows the same take twice; anim frame k = view A frame k - 6 = view B frame 164 + k (view A starts 6 frames into the take)"
+  },
+  "skeleton": {
+    "root": "mixamorig:Hips",
+    "spear_bones": [
+      "weapon_spear",
+      "weapon_spear_f1",
+      "weapon_spear_f2",
+      "weapon_spear_b0",
+      "weapon_spear_b1",
+      "weapon_spear_b2"
+    ],
+    "spear_length_m": 2.0
+  },
+  "root_motion": {
+    "net_displacement_m": [
+      -0.267,
+      0.0
+    ],
+    "note": "Blender world metres, +x = screen right, +y = away from the reference camera; translation lives on mixamorig:Hips (no root bone)"
+  },
+  "hips_height_m": {
+    "min": 0.2678,
+    "max": 1.6131
+  },
+  "spear_on_floor_windows": [
+    [
+      4,
+      10
+    ],
+    [
+      22,
+      22
+    ],
+    [
+      56,
+      56
+    ],
+    [
+      62,
+      64
+    ],
+    [
+      72,
+      74
+    ],
+    [
+      85,
+      105
+    ],
+    [
+      113,
+      118
+    ],
+    [
+      120,
+      121
+    ],
+    [
+      158,
+      160
+    ]
+  ]
+}

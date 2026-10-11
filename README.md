@@ -17,3 +17,9 @@ tests/
   animation/ skeletal_meshes/
 docs/
 ```
+
+## Animations
+
+| Animation | Reference | Notes |
+|---|---|---|
+| `assets/animations/combat/A_ch02_SpearAcrobatics.fbx` | `references/spear_acrobatics/` | 170 frames @ 30 fps, spear bones included. See [`docs/spear_acrobatics.md`](docs/spear_acrobatics.md); generator in `tools/spear_acrobatics/`. |
