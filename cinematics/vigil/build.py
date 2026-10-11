@@ -12,6 +12,7 @@ or inside Blender 5.2::
 
 import argparse
 import json
+import math
 import os
 import sys
 import time
@@ -92,11 +93,18 @@ def export_fbx(path):
         if o.type in ("ARMATURE", "MESH"):
             o.select_set(True)
     bpy.context.view_layer.objects.active = arm
+    # export in the source asset's own frame (scale 0.01, facing -Y, root motion from the origin)
+    # so the clip lines up with ch_02.fbx in an engine; the cutscene staging is restored after
+    staged = (arm.location.copy(), arm.rotation_euler.copy(), arm.scale.copy())
+    arm.location = (0, 0, 0)
+    arm.rotation_euler = (math.radians(90), 0, 0)
+    arm.scale = (0.01, 0.01, 0.01)
     bpy.ops.export_scene.fbx(filepath=os.path.abspath(path), use_selection=True,
                              object_types={"ARMATURE", "MESH"}, add_leaf_bones=False,
                              bake_anim=True, bake_anim_use_all_actions=False,
                              bake_anim_use_nla_strips=False, bake_anim_simplify_factor=0.0,
                              path_mode="STRIP", axis_forward="-Z", axis_up="Y")
+    arm.location, arm.rotation_euler, arm.scale = staged
 
 
 def frame_list(spec):

@@ -323,8 +323,11 @@ def main(contacts_path, out_path):
     # gentle master: fade, soft clip, normalise
     master = env([(0, 0), (0.05, 1), (TOTAL_FRAMES / FPS - 0.6, 1), (TOTAL_FRAMES / FPS, 0)])
     mix *= master
-    mix = np.tanh(mix * 1.2) / 1.2
-    mix *= min(1.0, 0.89 / np.max(np.abs(mix)))
+    # master: bring the body of the piece up to ~-20 dBFS RMS, soft-limit the hits
+    rms = np.sqrt(np.mean(mix ** 2))
+    mix *= 10 ** (-20 / 20) / rms
+    mix = np.tanh(mix * 1.1) / 1.1
+    mix *= min(1.0, 0.94 / np.max(np.abs(mix)))
     pcm = (mix.T * 32767).astype(np.int16)
     with wave.open(out_path, "wb") as w:
         w.setnchannels(2)
