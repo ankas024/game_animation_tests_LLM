@@ -40,11 +40,13 @@ def parse_args():
     ap.add_argument("--frames", default="1-%d" % shots.FRAME_END,
                     help="range 'a-b' or comma list '1,50,100'")
     ap.add_argument("--res", default="1920x804")
-    ap.add_argument("--samples", type=int, default=64)
+    ap.add_argument("--samples", type=int, default=14)
     ap.add_argument("--no-motion-blur", action="store_true")
     ap.add_argument("--out", default=os.path.join(HERE, "renders", "frames"))
     ap.add_argument("--save-blend", default=None)
     ap.add_argument("--skip-existing", action="store_true")
+    ap.add_argument("--export-fbx", default=None,
+                    help="write the character with the baked performance (armature + skin) to FBX")
     return ap.parse_args(argv)
 
 
@@ -82,6 +84,21 @@ def build(args):
     return perf
 
 
+def export_fbx(path):
+    """Character + baked 840-frame performance, Mixamo bone names intact, for game engines."""
+    bpy.ops.object.select_all(action="DESELECT")
+    arm = bpy.data.objects["CHAR_rig"]
+    for o in [arm] + list(arm.children):
+        if o.type in ("ARMATURE", "MESH"):
+            o.select_set(True)
+    bpy.context.view_layer.objects.active = arm
+    bpy.ops.export_scene.fbx(filepath=os.path.abspath(path), use_selection=True,
+                             object_types={"ARMATURE", "MESH"}, add_leaf_bones=False,
+                             bake_anim=True, bake_anim_use_all_actions=False,
+                             bake_anim_use_nla_strips=False, bake_anim_simplify_factor=0.0,
+                             path_mode="STRIP", axis_forward="-Z", axis_up="Y")
+
+
 def frame_list(spec):
     if "-" in spec and "," not in spec:
         a, b = spec.split("-")
@@ -101,6 +118,8 @@ def render(args):
         live = [m for m in sc.timeline_markers if m.frame <= f and m.camera]
         if live:
             sc.camera = max(live, key=lambda m: m.frame).camera
+        if not args.no_motion_blur:
+            sc.render.use_motion_blur = shots.shot_at(f) in shots.MOTION_BLUR_SHOTS
         sc.render.filepath = path
         bpy.ops.render.render(write_still=True)
         print(f"[vigil] frame {f} -> {path} ({time.time() - t:.1f}s)", flush=True)
@@ -109,6 +128,8 @@ def render(args):
 if __name__ == "__main__":
     a = parse_args()
     build(a)
+    if a.export_fbx:
+        export_fbx(a.export_fbx)
     if a.save_blend:
         bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(a.save_blend))
     if a.render:

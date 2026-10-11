@@ -451,6 +451,8 @@ class Performance:
         fk_hand = head[P + "RightHand"]
         lift = Vector((0, wobble(f, 3.3, 3.0, 0.4), 0))
         tgt = fk_hand.lerp(hand_target + lift, reach)
+        if fist == 0:
+            tgt = tgt + Vector((-13.0, 0.0, 7.0)) * math.sin(math.pi * reach)
         if fist > 0:
             tgt = tgt.lerp(fist_target, fist)
         pole_reach = Vector((-1.0, -0.5, -0.6))

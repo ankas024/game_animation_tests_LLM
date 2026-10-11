@@ -2,8 +2,9 @@
 
 import math
 
+import bmesh
 import bpy
-from mathutils import Vector
+from mathutils import Vector, kdtree
 
 import materials as M
 from character import P
@@ -16,11 +17,17 @@ SHOTS = [
     ("03_walk_front", 201, 350),
     ("04_look_up", 351, 480),
     ("05_face", 481, 620),
-    ("06_hand", 621, 690),
-    ("07_glow", 691, 770),
+    ("06_hand", 621, 668),
+    ("07_glow", 669, 770),
     ("08_wide", 771, 840),
 ]
 FRAME_END = SHOTS[-1][2]
+# deformation motion blur only where things move fast enough to need it
+MOTION_BLUR_SHOTS = {"01_doorway", "02_boots", "03_walk_front", "06_hand"}
+
+
+def shot_at(frame):
+    return next(name for name, f0, f1 in SHOTS if f0 <= frame <= f1)
 
 
 def _obj(name, data, col):
@@ -54,8 +61,24 @@ class Cinematography:
     def build(self):
         self.world()
         self.lights()
+        self.cam_path = []
         self.cameras()
+        self._clear_motes_near_cameras()
         return self
+
+    def _clear_motes_near_cameras(self, radius=1.3):
+        """Dust right in front of a lens turns into giant bokeh blobs: keep it out of camera paths."""
+        me = self.env.motes_obj.data
+        kd = kdtree.KDTree(len(self.cam_path))
+        for i, p in enumerate(self.cam_path):
+            kd.insert(p, i)
+        kd.balance()
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        doomed = [v for v in bm.verts if kd.find(v.co)[2] < radius]
+        bmesh.ops.delete(bm, geom=doomed, context="VERTS")
+        bm.to_mesh(me)
+        bm.free()
 
     # ------------------------------------------------------------------ world
     def world(self):
@@ -132,7 +155,7 @@ class Cinematography:
         spo.location = self.stop + self.beam_dir * dist
         aim(spo, self.stop)
         beam = Curve([(1, 1.0), (430, 1.0), (470, 1.25), (566, 1.3), (626, 1.9), (645, 2.8),
-                      (668, 0.35), (700, 0.12), (840, 0.1)])
+                      (668, 0.35), (700, 0.2), (840, 0.16)])
         key_energy(sp, lambda f: self.beam_base * beam(f), 1, FRAME_END, 2)
 
         # light pouring in through the west door
@@ -238,6 +261,7 @@ class Cinematography:
         e.y += math.radians(roll)
         cam.keyframe_insert("location", frame=f)
         cam.keyframe_insert("rotation_euler", frame=f)
+        self.cam_path.append(Vector(loc))
         cam.data.dof.focus_distance = max(0.1, (Vector(focus) - Vector(loc)).length)
         cam.data.dof.keyframe_insert("focus_distance", frame=f)
 
@@ -279,7 +303,7 @@ class Cinematography:
         # 02 boots: ankle-height tracking from her right
         c = cams["02_boots"]
         c.data.lens = 45
-        c.data.dof.aperture_fstop = 2.0
+        c.data.dof.aperture_fstop = 2.8
         for f in range(131, 201):
             hips = tr[f]["hips"]
             feet = (tr[f]["lfoot"] + tr[f]["rfoot"]) / 2
@@ -289,7 +313,7 @@ class Cinematography:
         # 03 walking toward camera, long lens, shallow focus
         c = cams["03_walk_front"]
         c.data.lens = 70
-        c.data.dof.aperture_fstop = 1.8
+        c.data.dof.aperture_fstop = 2.5
         for f in range(201, 351):
             hips, head = tr[f]["hips"], tr[f]["head"]
             u = smooth((f - 201) / 149)
@@ -314,7 +338,7 @@ class Cinematography:
         # 05 her face in the moonbeam; the hand rises into frame, focus racks to it
         c = cams["05_face"]
         c.data.lens = 40
-        c.data.dof.aperture_fstop = 2.2
+        c.data.dof.aperture_fstop = 3.2
         rack = Curve([(540, 0.0), (566, 1.0)])
         tilt = Curve([(515, 0.0), (575, 0.5)])
         for f in range(481, 621):
@@ -331,9 +355,9 @@ class Cinematography:
         c.data.lens = 42
         c.data.dof.aperture_fstop = 2.2
         h0 = tr[628]["rhand"]
-        for f in range(621, 691):
+        for f in range(621, 669):
             hand = tr[f]["rhand"]
-            u = smooth((f - 621) / 69)
+            u = smooth((f - 621) / 47)
             loc = h0 + V(0.75, -0.95, mix(-0.62, -0.75, u))
             tgt = h0.lerp(hand, 0.65) + V(0, 0, 0.04)
             self._key_cam(c, f, loc, tgt, hand, shake=0.12)
@@ -342,25 +366,27 @@ class Cinematography:
         # 07 the light held at her chest lights her face from below
         c = cams["07_glow"]
         c.data.lens = 55
-        c.data.dof.aperture_fstop = 2.0
-        for f in range(691, 771):
+        c.data.dof.aperture_fstop = 2.8
+        for f in range(669, 771):
             head, chest = tr[f]["head"], tr[f]["rhand"]
-            u = smooth((f - 691) / 79)
+            u = smooth((f - 669) / 101)
             loc = V(mix(-0.55, -0.42, u), stop_y + mix(1.75, 1.45, u), mix(1.02, 1.08, u))
             tgt = chest.lerp(head, 0.62)
             self._key_cam(c, f, loc, tgt, head, shake=0.1)
             self._fill(f, loc + V(-0.4, 0.3, 0.4), head, 6.0)
 
-        # 08 high wide from the sanctuary: alone in the ruin, holding the last light
+        # 08 rising pull-back: alone in the nave, the last light in her hand, the rose window ahead
         c = cams["08_wide"]
-        c.data.lens = 32
+        c.data.lens = 18
         c.data.dof.aperture_fstop = 8.0
+        rose = self.env.rose_c
         for f in range(771, 841):
             u = (f - 771) / 69
             u = u * u * (3 - 2 * u) * 0.6 + u * 0.4
-            loc = V(mix(0.35, 0.15, u), stop_y - mix(2.6, 6.2, u), mix(1.5, 3.6, u))
-            tgt = V(0.0, stop_y + 14.0, mix(3.2, 4.6, u))
-            self._key_cam(c, f, loc, tgt, tr[f]["hips"], shake=0.05)
+            loc = V(mix(0.3, 0.05, u), stop_y - mix(3.0, 7.5, u), mix(1.4, 2.8, u))
+            chest = tr[f]["chest"]
+            aim_dir = (chest - loc).normalized() * 0.56 + (rose - loc).normalized() * 0.44
+            self._key_cam(c, f, loc, loc + aim_dir, tr[f]["hips"], shake=0.05)
             self._fill(f, V(0, -30, 0), V(0, 0, 0), 0.0)
 
 
@@ -373,8 +399,8 @@ def render_settings(res_x=1920, res_y=804, samples=64, motion_blur=True):
     cy.device = "CPU"
     cy.samples = samples
     cy.use_adaptive_sampling = True
-    cy.adaptive_threshold = 0.03
-    cy.adaptive_min_samples = 16
+    cy.adaptive_threshold = 0.05
+    cy.adaptive_min_samples = 8
     cy.use_denoising = True
     cy.denoiser = "OPENIMAGEDENOISE"
     cy.denoising_input_passes = "RGB_ALBEDO_NORMAL"

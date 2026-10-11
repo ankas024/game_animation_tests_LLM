@@ -2,3 +2,4 @@ renders/frames/
 renders/*.wav
 __pycache__/
 *.blend1
+renders/fonts/
