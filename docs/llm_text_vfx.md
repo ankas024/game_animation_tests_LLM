@@ -105,3 +105,10 @@ ch.unfold_from_orb($Orb)        # and tween $Orb.form 1 -> 0
 ```
 
 The palette lives in `llm_palette()` in `glyph_common.gdshaderinc` (indigo → violet → electric cyan → white-hot, with amber attention tokens). Change it once and every layer follows.
+
+> Note: the committed video/GIF/stills were rendered just before the final tuning pass, which:
+> - stopped the orb's attracted glyphs from settling into a bright flat disk
+> - faded camera-facing ribbons when seen end-on
+> - softened the unfold/disintegrate particle clouds
+>
+> Re-run `vfx/tools/render_showcase.sh` to regenerate them from the current code.
