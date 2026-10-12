@@ -14,7 +14,7 @@ enum Mode { DRIFT, ATTRACT, CONVERGE, ORBIT }
 @export var buoyancy := 0.6
 @export var drag := 1.6
 @export var turbulence := 1.4
-@export var attract_strength := 22.0
+@export var attract_strength := 30.0
 
 var attractor: Node3D
 
@@ -128,9 +128,10 @@ func _process(delta: float) -> void:
 					_buf[o + 15] = 0.0
 					continue
 				var dir := to / d
-				var swirl := dir.cross(Vector3.UP).normalized() * 3.5
-				v += (dir * attract_strength + swirl * (1.0 + 1.0 / (d + 0.2))) * delta
-				v *= exp(-2.2 * delta)
+				# spiral in (not a stable accretion disk): swirl fades as the glyph ages
+				var swirl := dir.cross(Vector3.UP).normalized() * 1.6 * (1.0 - a)
+				v += (dir * attract_strength * (0.6 + a * 1.5) + swirl) * delta
+				v *= exp(-3.2 * delta)
 				p += v * delta
 				a = maxf(a, 0.2) # stay bright while travelling
 				fade_mul = clampf((d - 0.1) / 0.35, 0.0, 1.0) # dim as it sinks into the core

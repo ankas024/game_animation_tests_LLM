@@ -369,7 +369,7 @@ func spawn_afterimage(hue: float, life_time := 0.55) -> void:
 func disintegrate(duration := 1.8, dir := Vector3.UP, wind := Vector3(0.6, 0.0, -0.2)) -> void:
 	var origin := Vector3(0, -0.02, 0) if dir.y >= 0.0 else Vector3(0, 1.27, 0)
 	set_dissolve_shape_linear(origin, dir, 1.32, 0.35)
-	_build_samples(5000)
+	_build_samples(3200)
 	_op = {"kind": "out", "t": 0.0, "len": duration, "mode": GlyphSwarm.Mode.DRIFT, "wind": wind}
 
 
@@ -425,10 +425,10 @@ func _process_op(delta: float) -> void:
 	if _op.kind == "out":
 		var p := clampf(t / dur, 0.0, 1.0)
 		dissolve_progress = p
-		overdrive = sin(p * PI) * 0.8
+		overdrive = sin(p * PI) * 0.4
 		var thr := _threshold(p)
 		var mode: int = _op.mode
-		var budget := 90
+		var budget := 60
 		while _sample_cursor < _samples.size() and _samples[_sample_cursor].f < thr and budget > 0:
 			var s: Dictionary = _samples[_sample_cursor]
 			_sample_cursor += 1
@@ -437,11 +437,11 @@ func _process_op(delta: float) -> void:
 			var col := _token_color(randf())
 			if mode == GlyphSwarm.Mode.DRIFT:
 				var wind: Vector3 = _op.wind
-				var vel := wind + Vector3(randf_range(-0.3, 0.3), randf_range(0.2, 0.9), randf_range(-0.3, 0.3))
-				swarm.emit(wp, vel, col, randf_range(1.2, 2.2), randf_range(0.022, 0.04), mode, Vector3.ZERO, 14.0)
+				var vel := wind * randf_range(1.0, 2.2) + Vector3(randf_range(-0.6, 0.6), randf_range(0.3, 1.4), randf_range(-0.6, 0.6))
+				swarm.emit(wp, vel, col, randf_range(0.9, 1.7), randf_range(0.02, 0.034), mode, Vector3.ZERO, 14.0)
 			else:
 				var away := (wp - swarm.attractor.global_position).normalized()
-				swarm.emit(wp, away * randf_range(0.6, 1.4) + Vector3.UP * 0.4, col, 3.0, randf_range(0.025, 0.04), mode, Vector3.ZERO, 20.0)
+				swarm.emit(wp, away * randf_range(0.5, 1.1) + Vector3.UP * 0.3, col, 1.6, randf_range(0.025, 0.04), mode, Vector3.ZERO, 20.0)
 		if t >= dur:
 			# skip the remaining samples that weren't emitted this frame
 			_sample_cursor = _samples.size()
@@ -452,7 +452,7 @@ func _process_op(delta: float) -> void:
 	else:
 		var p := clampf(1.0 - t / dur, 0.0, 1.0)
 		dissolve_progress = p
-		overdrive = sin(p * PI) * 0.8
+		overdrive = sin(p * PI) * 0.4
 		var sched: Array = _op.sched
 		var travel: float = _op.travel
 		var source: Vector3 = _op.source
@@ -464,7 +464,7 @@ func _process_op(delta: float) -> void:
 			if source == Vector3.INF:
 				from = target + Vector3(randf_range(-1, 1), randf_range(-0.3, 1.2), randf_range(-1, 1)).normalized() * randf_range(0.6, 1.4)
 			else:
-				from = source + Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * 0.12
+				from = source + Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)).normalized() * randf_range(0.15, 0.4)
 			swarm.emit(from, Vector3.ZERO, _token_color(randf()), travel, randf_range(0.022, 0.036), GlyphSwarm.Mode.CONVERGE, target, 22.0)
 		if t >= dur:
 			dissolve_progress = 0.0

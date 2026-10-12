@@ -108,11 +108,15 @@ func _rebuild() -> void:
 		var w := width
 		if taper:
 			w *= clampf(life * 1.6, 0.0, 1.0)
+		var facing := 1.0
 		if orient == Orient.FACE_CAMERA:
-			side = tangent.cross(cam_pos - p).normalized() * w * 0.5
+			var c := tangent.cross((cam_pos - p).normalized())
+			# seen end-on the strip folds onto itself and stacks into a white bar: fade it out
+			facing = smoothstep(0.2, 0.55, c.length())
+			side = c.normalized() * w * 0.5
 		else:
 			side = Vector3.UP * w * 0.5
-		var col := Color(1, 1, 1, life)
+		var col := Color(1, 1, 1, life * facing)
 		# flag segments that run right-to-left on screen so the shader can flip glyphs
 		var flip := Vector2(1.0 if tangent.dot(cam_right) < 0.0 and orient == Orient.FACE_CAMERA else 0.0, 0.0)
 		_imesh.surface_set_color(col)

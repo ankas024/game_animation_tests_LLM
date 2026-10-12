@@ -164,7 +164,7 @@ void fragment() {
 			// rare amber "attention" tokens
 			tok_col = mix(tok_col, ATTENTION_AMBER * 1.4, step(0.965, cell_rand) * 0.85);
 			float g = max(glyph, has_glyph * 0.06);
-			emis += tok_col * (g * 3.0 + halo * 0.5) * in_band * (1.0 + overdrive * 0.5);
+			emis += tok_col * (g * 2.2 + halo * 0.35) * in_band * (1.0 + overdrive * 0.5);
 			// white-hot burning front: the last glyphs flare before they detach
 			float front = 1.0 - smoothstep(0.0, 0.12, band_t);
 			emis += vec3(0.75, 0.95, 1.0) * front * edge_heat * (0.25 + glyph);
